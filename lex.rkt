@@ -159,11 +159,11 @@
      [(func-decl) $1])
     (decls [(decl decls) (cons $1 $2)]
            [() '()])
-    (array [(|[| exp |]|) `(,$2)]
-           [(|[| exp |]| array) (cons $2 $4)])
+    (index-list [(|[| exp |]|) `(,$2)]
+                [(|[| exp |]| index-list) (cons $2 $4)])
     (lvalue [(identifier) $1]
             [(lvalue |.| identifier) (Node 'attribute `(,$1 ,$3))]
-            [(identifier array) (Node 'subscript `(,$1 ,$2))])
+            [(identifier index-list) (Node 'subscript `(,$1 ,$2))])
     (exp-list [(exp) `(,$1)]
               [(exp-list |;| exp) (append $1 `(,$3))])
     (exps [(exp-list) $1]
