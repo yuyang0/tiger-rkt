@@ -3,7 +3,9 @@
 #lang racket
 (require parser-tools/lex)
 (require (prefix-in : parser-tools/lex-sre)) ;overwrite or, so give a prefix
+(require "ast.rkt")
 
+(provide gen-tokens gen-ast)
 ;;---------------------------------------------------------------
 ;;    Tokens
 ;;---------------------------------------------------------------
@@ -111,6 +113,7 @@
               ;; end
               elts)
         #:transparent)
+
 (define tiger-parser
   (parser
    [src-pos]
@@ -120,11 +123,17 @@
    [start program]
    [end EOF]
    [tokens keywords constants operators identifier delims]
-   [error (lambda (tok-ok? tok-name tok-value start-pos end-pos)
-            (error 'tiger-parser "error (~a:~a) token-name: ~a token-value: ~a"
-                   (position-line start-pos) (position-col start-pos)
-                   tok-name tok-value))]
-   [precs [left & \|]
+   [error
+    (lambda (tok-ok? tok-name tok-value start-pos end-pos)
+      (let ([msg (format "error (~a:~a) token-name: ~a token-value: ~a"
+                         (position-line start-pos) (position-col start-pos)
+                         tok-name tok-value)])
+        (raise msg)))]
+   [precs [right OF]
+          [nonassoc DO]
+          [nonassoc ELSE]
+          [nonassoc :=]
+          [left & \|]
           [nonassoc = <> < <= > >=]
           [left + -]
           [left * /]
@@ -132,26 +141,25 @@
    [grammar
     (program [(exp) $1])
 
-    (type-id [(ID) (Node 'name $1)])
     (identifier  [(ID) (Node 'name $1)])
 
-    (tyfield [(identifier : type-id) `(,$1 ,$3)])
+    (tyfield [(identifier : identifier) `(,$1 ,$3)])
     (tyfield-list [(tyfield-list |,| tyfield) (append $1 `(,$3))]
                   [(tyfield) `(,$1)])
     (tyfields [(tyfield-list) (Node 'tyfields $1)]
               [() '(Node 'tyfields '())])
 
     (type-exp
-     [(type-id) $1]
+     [(identifier) $1]
      [(|{| tyfields |}|) (Node 'record-type $2)]
-     [(ARRAY OF type-id) (Node 'array-type $3)])
-    (type-decl [(TYPE type-id = type-exp) (Node 'type-decl `(,$2 ,$4))])
+     [(ARRAY OF identifier) (Node 'array-type $3)])
+    (type-decl [(TYPE identifier = type-exp) (Node 'type-decl `(,$2 ,$4))])
     (var-decl [(VAR identifier := exp) (Node 'var-decl `(,$2 ,$4))]
-              [(VAR identifier : type-id := exp)
+              [(VAR identifier : identifier := exp)
                (Node 'var-decl `(,$2 ,$4 ,$6))])
     (func-decl [(FUNCTION identifier |(| tyfields |)| = exp)
                 (Node 'func-decl `(,$2 ,$4 ,$7))]
-               [(FUNCTION identifier |(| tyfields |)| : type-id = exp)
+               [(FUNCTION identifier |(| tyfields |)| : identifier = exp)
                 (Node 'func-decl `(,$2 ,$4 ,$7 ,$9))])
     (decl
      [(type-decl) $1]
@@ -159,11 +167,20 @@
      [(func-decl) $1])
     (decls [(decl decls) (cons $1 $2)]
            [() '()])
-    (index-list [(|[| exp |]|) `(,$2)]
-                [(|[| exp |]| index-list) (cons $2 $4)])
+    ;; (index-list [(|[| exp |]|) `(,$2)]
+    ;;             [(|[| exp |]| index-list) (cons $2 $4)])
+    ;; (lvalue [(identifier) $1]
+    ;;         [(lvalue |.| identifier) (Node 'attribute `(,$1 ,$3))]
+    ;;         ;; [(identifier index-list) (Node 'subscript `(,$1 ,$2))]
+    ;;         [(lvalue |[| exp |]|) (Node 'subscript `(,$1 ,$3))]
+    ;;         )
+
+    (lval_t [(identifier |.| identifier) (Node 'attribute `(,$1 ,$3))]
+            [(lval_t |.| identifier) (Node 'attribute `(,$1 ,$3))]
+            [(identifier |[| exp |]|) '()]
+            [(lval_t |[| exp |]|) '()])
     (lvalue [(identifier) $1]
-            [(lvalue |.| identifier) (Node 'attribute `(,$1 ,$3))]
-            [(identifier index-list) (Node 'subscript `(,$1 ,$2))])
+            [(lval_t) $1])
     (exp-list [(exp) `(,$1)]
               [(exp-list |;| exp) (append $1 `(,$3))])
     (exps [(exp-list) $1]
@@ -186,8 +203,8 @@
      [(NIL) (Node 'nil '())]
      [(|(| exps |)|) (Node 'exp-seq $2)]
      [(identifier |[| exp |]| OF exp) (Node 'array-exp `(,$1 ,$3 ,$6))]
-     [(identifier |{| identifier = exp |}|)
-      (Node 'record-exp `(,$1 ,$3 ,$5))]
+     [(identifier |{| valfields |}|)
+      (Node 'record-exp `(,$1 ,$3))]
      [(identifier |(| args |)|) (Node 'call-exp `(,$1 ,$3))]
 
      [(unary-exp) $1]
@@ -197,15 +214,19 @@
      [(logic-exp) $1]
 
      [(lvalue := exp) (Node 'assign-exp `(,$1 ,$3))]
-     [(IF exp THEN exp) (Node 'if-exp `(,$2 ,$4))]
+     ;; resolve the shift-reduce conflict between if-exp and ife-exp with
+     ;; (prec DO), becasue the priority of ELSE is higher than DO,
+     ;; so it always shifts when the next input terminal is ELSE
+     [(IF exp THEN exp) (prec DO) (Node 'if-exp `(,$2 ,$4))]
      [(IF exp THEN exp ELSE exp) (Node 'ife-exp  `(,$2 ,$4 ,$6))]
+
      [(FOR identifier := exp TO exp DO exp)
       (Node 'for-exp `(,$2 ,$4 ,$6 ,$8))]
      [(WHILE exp DO exp) (Node 'while-exp `(,$2 ,$4))]
      [(BREAK) (Node 'break-exp '())]
      [(LET decls IN exps END) (Node 'let-exp `(,$2 ,$4))])
 
-    (unary-exp [(- exp) (Node 'minus $2)])
+    (unary-exp [(- exp) (prec MINUS) (Node 'minus $2)])
     (arith-exp
      [(exp + exp) (Node '+ `(,$1 ,$3))]
      [(exp - exp) (Node '- `(,$1 ,$3))]

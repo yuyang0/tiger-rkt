@@ -2,16 +2,19 @@
 
 #lang racket
 (require "utils/datatype.rkt")
+(provide (all-defined-out))
+
 (define-datatype expression expression?
-  [number-const (val number?)]
-  [string-const (val string?)]
-  [nil]
+  [number-const-exp (val number?)]
+  [string-const-exp (val string?)]
+  [name-exp (name symbol?)]
+  [nil-exp]
   [seq-exp (exps (listof expression?))]
   [lval-exp (lval lvalue?)]
   [call-exp (func symbol?)
             (args (listof expression?))]
   [new-array-exp (type symbol?)
-                 (max number?)
+                 (max expression?)
                  (init expression?)]
   [new-record-exp (listof valfield?)]
   [unary-exp (op unary-op?)
@@ -41,7 +44,12 @@
            (val expression?)])
 (define-datatype tyfield tyfield?
   [a-tyfield (name symbol?)
-           (type-id symbol?)])
+             (type-id symbol?)])
+
+(define-datatype type-expression type-expression?
+  [name-tyexp]
+  [array-tyexp (elt-ty symbol?)]
+  [record-tyexp] (fields (listof tyfield?)))
 
 (define-datatype declaration declaration?
   [type-decl (type-id symbol?)
@@ -52,10 +60,10 @@
                  (ty symbol?)
                  (val expression?)]
   [function-decl (name symbol?)
-                 (args (listof tyfield))
+                 (args (listof tyfield?))
                  (body expression?)]
   [function-ty-decl (name symbol?)
-                    (args (listof tyfield))
+                    (args (listof tyfield?))
                     (ret-ry symbol?)
                     (body expression?)])
 
