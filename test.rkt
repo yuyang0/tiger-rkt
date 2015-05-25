@@ -1,7 +1,7 @@
 #!/usr/bin/env racket
 
 #lang racket
-(require "lex.rkt")
+(require "parser.rkt")
 (define test
   (lambda (dir test-func)
     (let ([file-lst (filter file-exists? (directory-list dir #:build? #t))])

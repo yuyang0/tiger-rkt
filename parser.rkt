@@ -108,12 +108,6 @@
 ;;-------------------------------------------------------------
 (require parser-tools/yacc)
 
-(struct Node (type
-              ;; start
-              ;; end
-              elts)
-        #:transparent)
-
 (define tiger-parser
   (parser
    [src-pos]
@@ -141,44 +135,48 @@
    [grammar
     (program [(exp) $1])
 
-    (identifier  [(ID) (Node 'name $1)])
+    (identifier  [(ID) $1])
 
-    (tyfield [(identifier : identifier) `(,$1 ,$3)])
+    (tyfield [(identifier : identifier) (a-tyfield $1 $3)])
     (tyfield-list [(tyfield-list |,| tyfield) (append $1 `(,$3))]
                   [(tyfield) `(,$1)])
-    (tyfields [(tyfield-list) (Node 'tyfields $1)]
-              [() '(Node 'tyfields '())])
+    (tyfields [(tyfield-list) $1]
+              [() '()])
+
+    (valfield [(identifier = exp) (a-valfield $1 $3)])
+    (valfield-list [(valfield-list |,| valfield) (append $1 `(,$3))]
+                   [(valfield) `(,$1)])
+    (valfields [(valfield-list) $1]
+               [() '()])
 
     (type-exp
-     [(identifier) $1]
-     [(|{| tyfields |}|) (Node 'record-type $2)]
-     [(ARRAY OF identifier) (Node 'array-type $3)])
-    (type-decl [(TYPE identifier = type-exp) (Node 'type-decl `(,$2 ,$4))])
-    (var-decl [(VAR identifier := exp) (Node 'var-decl `(,$2 ,$4))]
+     [(identifier) (name-tyexp $1)]
+     [(|{| tyfields |}|) (record-tyexp $2)]
+     [(ARRAY OF identifier) (array-tyexp $3)])
+
+    (type-decl [(TYPE identifier = type-exp) (type-decl $2 $4)])
+    (var-decl [(VAR identifier := exp) (value-decl $2 $4)]
               [(VAR identifier : identifier := exp)
-               (Node 'var-decl `(,$2 ,$4 ,$6))])
+               (value-ty-decl $2 $4 $6)])
     (func-decl [(FUNCTION identifier |(| tyfields |)| = exp)
-                (Node 'func-decl `(,$2 ,$4 ,$7))]
+                (function-decl $2 $4 $7)]
                [(FUNCTION identifier |(| tyfields |)| : identifier = exp)
-                (Node 'func-decl `(,$2 ,$4 ,$7 ,$9))])
+                (function-ty-decl $2 $4 $7 $9)])
     (decl
      [(type-decl) $1]
      [(var-decl) $1]
      [(func-decl) $1])
+
     (decls [(decl decls) (cons $1 $2)]
            [() '()])
 
-    ;; (lvalue [(identifier) $1]
-    ;;         [(lvalue |.| identifier) (Node 'attribute `(,$1 ,$3))]
-    ;;         [(lvalue |[| exp |]|) (Node 'subscript `(,$1 ,$3))]
-    ;;         )
-
-    (lval_t [(identifier |.| identifier) (Node 'attribute `(,$1 ,$3))]
-            [(lval_t |.| identifier) (Node 'attribute `(,$1 ,$3))]
-            [(identifier |[| exp |]|) '()]
-            [(lval_t |[| exp |]|) '()])
-    (lvalue [(identifier) $1]
+    (lval_t [(identifier |.| identifier) (attr-lval (id-lval $1)  $3)]
+            [(lval_t |.| identifier) (attr-lval $1 $3)]
+            [(identifier |[| exp |]|) (sub-lval (id-lval $1) $3)]
+            [(lval_t |[| exp |]|) (sub-lval $1 $3)])
+    (lvalue [(identifier) (id-lval $1)]
             [(lval_t) $1])
+
     (exp-list [(exp) `(,$1)]
               [(exp-list |;| exp) (append $1 `(,$3))])
     (exps [(exp-list) $1]
@@ -188,22 +186,17 @@
     (args [(arg-list) $1]
           [() '()])
 
-    (valfield [(identifier = exp) `(,$1 ,$3)])
-    (valfield-list [(valfield-list |,| valfield) (append $1 `(,$3))]
-                   [(valfield) $1])
-    (valfields [(valfield-list) (Node 'valfields $1)]
-               [() '(Node 'valfields '())])
-
     (exp
-     [(NUMBER) (Node 'number-literal $1)]
-     [(STRING) (Node 'string-literal $1)]
-     [(lvalue) $1]
-     [(NIL) (Node 'nil '())]
-     [(|(| exps |)|) (Node 'exp-seq $2)]
-     [(identifier |[| exp |]| OF exp) (Node 'array-exp `(,$1 ,$3 ,$6))]
+     [(NUMBER) (number-const-exp $1)]
+     [(STRING) (string-const-exp $1)]
+     [(lvalue) (lval-exp $1)]
+     [(NIL) (nil-exp)]
+     [(|(| exps |)|) (seq-exp $2)]
+     [(identifier |[| exp |]| OF exp)
+      (new-array-exp $1 $3 $6)]
      [(identifier |{| valfields |}|)
-      (Node 'record-exp `(,$1 ,$3))]
-     [(identifier |(| args |)|) (Node 'call-exp `(,$1 ,$3))]
+      (new-record-exp $1 $3)]
+     [(identifier |(| args |)|) (call-exp $1 $3)]
 
      [(unary-exp) $1]
 
@@ -211,35 +204,35 @@
      [(rel-exp) $1]
      [(logic-exp) $1]
 
-     [(lvalue := exp) (Node 'assign-exp `(,$1 ,$3))]
+     [(lvalue := exp) (assign-exp $1 $3)]
      ;; resolve the shift-reduce conflict between if-exp and ife-exp with
      ;; (prec DO), becasue the priority of ELSE is higher than DO,
      ;; so it always shifts when the next input terminal is ELSE
-     [(IF exp THEN exp) (prec DO) (Node 'if-exp `(,$2 ,$4))]
-     [(IF exp THEN exp ELSE exp) (Node 'ife-exp  `(,$2 ,$4 ,$6))]
+     [(IF exp THEN exp) (prec DO) (if-exp $2 $4)]
+     [(IF exp THEN exp ELSE exp) (ife-exp  $2 $4 $6)]
 
      [(FOR identifier := exp TO exp DO exp)
-      (Node 'for-exp `(,$2 ,$4 ,$6 ,$8))]
-     [(WHILE exp DO exp) (Node 'while-exp `(,$2 ,$4))]
-     [(BREAK) (Node 'break-exp '())]
-     [(LET decls IN exps END) (Node 'let-exp `(,$2 ,$4))])
+      (for-exp $2 $4 $6 $8)]
+     [(WHILE exp DO exp) (while-exp $2 $4)]
+     [(BREAK) (break-exp)]
+     [(LET decls IN exps END) (let-exp $2 $4)])
 
-    (unary-exp [(- exp) (prec MINUS) (Node 'minus $2)])
+    (unary-exp [(- exp) (prec MINUS) (unary-exp '- $2)])
     (arith-exp
-     [(exp + exp) (Node '+ `(,$1 ,$3))]
-     [(exp - exp) (Node '- `(,$1 ,$3))]
-     [(exp * exp) (Node '* `(,$1 ,$3))]
-     [(exp / exp) (Node '/ `(,$1 ,$3))])
+     [(exp + exp) (binary-exp '+ $1 $3)]
+     [(exp - exp) (binary-exp '- $1 $3)]
+     [(exp * exp) (binary-exp '* $1 $3)]
+     [(exp / exp) (binary-exp '/ $1 $3)])
     (rel-exp
-     [(exp > exp) (Node '> `(,$1 ,$3))]
-     [(exp >= exp) (Node '>= `(,$1 ,$3))]
-     [(exp < exp) (Node '< `(,$1 ,$3))]
-     [(exp <= exp) (Node '<= `(,$1 ,$3))]
-     [(exp = exp) (Node '= `(,$1 ,$3))]
-     [(exp <> exp) (Node '<> `(,$1 ,$3))])
+     [(exp > exp)  (binary-exp '>  $1 $3)]
+     [(exp >= exp) (binary-exp '>= $1 $3)]
+     [(exp < exp)  (binary-exp '<  $1 $3)]
+     [(exp <= exp) (binary-exp '<= $1 $3)]
+     [(exp = exp)  (binary-exp '=  $1 $3)]
+     [(exp <> exp) (binary-exp '<> $1 $3)])
     (logic-exp
-     [(exp & exp) (Node 'and `(,$1 ,$3))]
-     [(exp \| exp) (Node 'or `(,$1 ,$3))])
+     [(exp & exp)  (binary-exp 'and $1 $3)]
+     [(exp \| exp) (binary-exp 'or  $1 $3)])
     ]))
 
 (define gen-ast

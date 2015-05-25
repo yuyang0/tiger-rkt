@@ -16,7 +16,8 @@
   [new-array-exp (type symbol?)
                  (max expression?)
                  (init expression?)]
-  [new-record-exp (listof valfield?)]
+  [new-record-exp (type symbol?)
+                  (fields (listof valfield?))]
   [unary-exp (op unary-op?)
              (exp expression?)]
   [binary-exp (op binary-op?)
@@ -41,15 +42,15 @@
 
 (define-datatype valfield valfield?
   [a-valfield (name symbol?)
-           (val expression?)])
+              (val expression?)])
 (define-datatype tyfield tyfield?
   [a-tyfield (name symbol?)
              (type-id symbol?)])
 
 (define-datatype type-expression type-expression?
-  [name-tyexp]
+  [name-tyexp (name symbol?)]
   [array-tyexp (elt-ty symbol?)]
-  [record-tyexp] (fields (listof tyfield?)))
+  [record-tyexp (fields (listof tyfield?))])
 
 (define-datatype declaration declaration?
   [type-decl (type-id symbol?)
@@ -69,8 +70,8 @@
 
 (define-datatype lvalue lvalue?
   [id-lval (name symbol?)]
-  [sub-lval (name symbol?)
-            (idx-lst (listof expression?))]
+  [sub-lval (lval lvalue?)
+            (idx expression?)]
   [attr-lval (lval lvalue?)
              (name symbol?)])
 
@@ -80,4 +81,4 @@
 
 (define binary-op?
   (lambda (op)
-    (memv op '(+ - * / > >= < <= = and or))))
+    (memv op '(+ - * / > >= < <= = <> and or))))

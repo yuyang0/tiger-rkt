@@ -1,0 +1,84 @@
+program        ::= exp
+
+type-id        ::= identifier
+
+tyfield        ::= identifier:type-id
+tyfields-list  ::= tyfield
+                |  tyfields-list , tyfield
+
+tyfields       ::= tyfields-list
+                |  null
+
+type-exp       ::= type-id
+                |  ARRAY OF type-id
+                |  {tyfields}
+
+type-decl      ::= TYPE type-id = type-exp
+var-decl       ::= VAR identifier := exp
+                |  VAR id : type-id := exp
+func-decl      ::= FUNCTION identifier {tyfields} = exp
+                |  FUNCTION identifier {tyfields} : type-id = exp
+
+decl           ::= type-decl
+                |  var-decl
+                |  func-decl
+
+decls          ::= decl decls
+                |  null
+
+lvalue         ::= identifier
+                |  lvalue[exp]
+                |  lvalue.identifier
+
+exp-list       ::= exp
+                |  exp-list ; exp
+exps           ::= exp-list
+                |  null
+
+arg-list       ::= exp
+                |  arg-list , exp
+args           ::= arg-list        -- include (), (exp), (exp, exp ...)
+                |  null
+call-exp       ::= identifier(args)
+
+valfield       ::= identifier = exp
+valfield-list  ::= valfield
+                |  valfield-list , valfield
+valfields      ::= valfield-list
+                |  null
+
+exp            ::= lvalue
+                |  nil
+                |  (exps)          -- include (), (exp), (exp; exp ...)
+                |  number-literal
+                |  string-literal
+                |  call-exp
+                |  unary-exp
+                |  identifier{valfields}
+                |  identifier[exp] of exp
+
+                |  arith-exp
+                |  rel-exp
+                |  logical-exp
+
+                |  lvalue := exp
+                |  if exp then exp
+                |  if exp then exp else exp
+                |  while exp do exp
+                |  for id := exp to exp do exp
+                |  break
+                |  let { decls } in exps end
+
+unary-exp      ::= - exp
+arith-exp      ::= exp + exp
+                |  exp - exp
+                |  exp * exp
+                |  exp / exp
+rel-exp        ::= exp > exp
+                |  exp >= exp
+                |  exp < exp
+                |  exp <= exp
+                |  exp = exp
+                |  exp <> exp
+logical-exp    ::= exp & exp
+                |  exp | exp
